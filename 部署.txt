@@ -1,0 +1,145 @@
+
+(1)安装Python3.6
+不要删除python2.7!
+直接敲命令:
+yum install openssl-devel bzip2-devel expat-devel gdbm-devel readline-devel sqlite-devel
+wget https://www.python.org/ftp/python/3.6.5/Python-3.6.5.tgz
+tar -zxvf Python-3.6.5.tgz
+mv Python-3.6.5 /usr/local
+cd /usr/local/Python-3.6.5/
+./configure
+make
+make install
+
+(2)使用python3创建一个虚拟环境
+cd /home/zhu
+python3 -m venv Venv3.6
+
+(3)安装uwsgi:
+pip install uwsgi
+
+如果安装失败:
+deactivate 退出虚拟环境
+yum install -y python-devel
+easy_install uwsgi
+
+(4)安装nginx
+配置源: 
+1.   vim /etc/yum.repos.d/nginx.repo
+添加以下内容:
+-----------------
+[nginx]
+name=nginx repo
+baseurl=http://nginx.org/packages/mainline/centos/7/x86_64/
+gpgcheck=0
+enabled=1
+------------------
+gpkcheck=0 表示对从这个源下载的rpm包不进行校验
+enable=1 表示启用这个源
+2.   yum install nginx  安装nginx
+3.   systemctl start nginx   启动nginx
+
+拓展:
+修改默认端口号(默认为80):
+：
+修改listen     8080;  (不要忘记分号)
+systemctl restart nginx 重启nginx，直接访问http://ip:8080 能看到nginx的欢迎界面即可
+
+
+(5)配置django参数
+1.  把django项目拉过来,   在虚拟环境下  到项目目录下
+scp -r fresh root@192.168.220.128:/home/zhu 
+
+2.  yum install mysql-devel gcc gcc-devel python-devel
+
+3.  pip install django django-haystack pymysql whoosh jieba mysqlclient
+
+4.  在项目目录下新建文件: vim django_uwsgi.ini
+添加以下内容:
+---------------------------------------------------------
+[uwsgi]
+# 通过uwsgi访问django需要配置成http
+# 通过nginx请求uwsgi来访问django 需要配置成socket
+# 9000 是django的端口号
+socket = :9000
+# web项目根目录
+chdir = /home/zhu/fresh  
+# module指定项目自带的的wsgi配置文件位置
+module = fresh.wsgi
+# 允许存在主进程
+master = true
+# 开启进程数量
+processes = 3
+# 服务器退出时自动清理环境
+vacuum = true
+---------------------------------------------------------
+
+5.vim /etc/nginx/conf.d/fresh.conf
+添加以下内容:
+---------------------------------------------------------
+server {
+     listen       8008;
+     location / {
+           include /etc/nginx/uwsgi_params;
+           uwsgi_pass 127.0.0.1:9000;
+    }
+    location /static/{
+           root /home/zhu/fresh/;
+    }
+  }
+----------------------------------------------------------
+nginx -t  检查语法是否正确
+
+
+
+(6)修改settings.py
+1.修改debug=False
+2.设置allow_hosts=[“*”]
+3.STATIC_ROOT = os.path.join(BASE_DIR, "static/")
+   注释掉STATICFILES_DIRS
+4.修改数据库端口号 
+5.运行 python manage.py collectstatic
+
+
+(7)重启nginx,关闭防火墙,启动服务器
+systemctl restart nginx        或        systemctl start nginx 
+systemctl stop firewalld.service
+uwsgi --ini django_uwsgi.ini --buffer-size 32768
+
+
+(8)如果页面没有样式:
+1.vim /etc/nginx/nginx.conf
+------------------------------------------------------------
+修改第一行user  root;  root为当前虚拟机用户名
+------------------------------------------------------------
+2.setenforce 0  临时关闭   1  永久关闭
+3.重新执行第7步
+
+
+
+
+
+-------------------------问题--------------------------------
+
+1,uwsgi遇到ImportError: No module named django.core.wsgi问题 
+通过在wsgi.py里面打印sys.path发现是因为path里面并没有包含该安装的site-packages的路径，
+因此在wsgi.py添加如下语句
+sys.path.append('/usr/lib/python2.7/site-packages')  
+sys.path.append('/usr/lib64/python2.7/site-packages')
+
+lsof -i:9000  查看9000端口被谁占用了  
+netstat -ap | grep 9000   查看9000端口被谁占用了    两个都可以
+ps -aux | grep uwsgi   查看uwsgi所有进程
+kill -9 pid号  强制关闭占用端口的程序
+
+
+
+
+
+
+
+
+
+
+
+                
